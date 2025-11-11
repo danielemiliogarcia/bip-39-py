@@ -1,6 +1,10 @@
 # install
 
-create venv and install requirements
+create or activate venv and install requirements
+
+```
+pip install bip-utils coincurve
+```
 
 # how to run
 ```bash
