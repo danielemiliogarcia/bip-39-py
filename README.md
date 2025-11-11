@@ -1,2 +1,12 @@
-# bip-39-py
-python script to get real values in order to test bip-39 key derivation on other projects
+# install
+
+create venv and install requirements
+
+# how to run
+
+python bip.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+or for testnet
+
+python bip.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" --testnet
+
