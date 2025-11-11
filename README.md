@@ -2,6 +2,17 @@
 
 create or activate venv and install requirements
 
+## create or/and activate venv
+```
+python -m venv venv
+source venv/bin/activate
+```
+
+## install reqs
+```
+pip install -r requirements.txt
+```
+or
 ```
 pip install bip-utils coincurve
 ```
