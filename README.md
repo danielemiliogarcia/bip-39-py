@@ -22,8 +22,8 @@ pip install bip-utils coincurve
 python bip.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 ```
 
-or for testnet
+or for regtest
 
 ```bash
-python bip.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" --testnet
+python bip.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" --network regtest
 ```

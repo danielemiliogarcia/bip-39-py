@@ -51,29 +51,15 @@ def derive_account_info(bip_obj, account_idx: int, count: int, hrp: str):
         addr_ctx = ext_chain.AddressIndex(i)
         pub_hex = addr_ctx.PublicKey().RawCompressed().ToHex()
 
-        # For custom HRP (like regtest 'bcrt'), manually encode the address
-        # ToAddress() only supports standard 'bc' and 'tb' HRPs
-        if hrp not in ['bc', 'tb']:
-            # Determine encoder based on BIP type
-            bip_name = type(bip_obj).__name__
-            if 'Bip84' in bip_name:
-                addr_str = P2WPKHAddrEncoder.EncodeKey(addr_ctx.PublicKey().RawCompressed().ToBytes(), hrp=hrp)
-            elif 'Bip86' in bip_name:
-                # For P2TR, encode with custom HRP using the CoinsConf params approach
-                # We'll create a custom address with the regtest HRP
-                try:
-                    # Get the Taproot internal key (x-only pubkey)
-                    from bip_utils.addr.segwit_addr import SegwitBech32Encoder
-                    witness_prog = addr_ctx.PublicKey().RawCompressed().ToBytes()[1:]  # x-only key
-                    addr_str = SegwitBech32Encoder.Encode(hrp, 1, witness_prog)  # witness version 1 for Taproot
-                except Exception:
-                    # Fallback to default if encoding fails
-                    addr_str = addr_ctx.PublicKey().ToAddress()
-            else:
-                # BIP44 and BIP49 don't use bech32, so just use default
-                addr_str = addr_ctx.PublicKey().ToAddress()
+        # Use appropriate encoder based on BIP type for custom HRP
+        if isinstance(bip_obj, Bip84) and hrp != 'bc':
+            # BIP84 (P2WPKH) - use custom encoder for testnet/regtest
+            addr_str = P2WPKHAddrEncoder.EncodeKey(addr_ctx.PublicKey().RawCompressed().ToBytes(), hrp=hrp)
+        elif isinstance(bip_obj, Bip86) and hrp != 'bc':
+            # BIP86 (P2TR/Taproot) - use custom encoder for testnet/regtest
+            addr_str = P2TRAddrEncoder.EncodeKey(addr_ctx.PublicKey().RawCompressed().ToBytes(), hrp=hrp)
         else:
-            # Use default encoding for standard networks
+            # Standard mainnet or non-segwit BIPs use default encoding
             addr_str = addr_ctx.PublicKey().ToAddress()
 
         children.append((i, pub_hex, addr_str))
