@@ -25,6 +25,9 @@ from bip_utils import (
     Bip84, Bip84Coins,
     Bip86, Bip86Coins,
     Bip44Changes,
+    P2WPKHAddrEncoder,
+    P2TRAddrEncoder,
+    CoinsConf,
 )
 
 def derive_account_info(bip_obj, account_idx: int, count: int, hrp: str):
@@ -47,7 +50,32 @@ def derive_account_info(bip_obj, account_idx: int, count: int, hrp: str):
     for i in range(count):
         addr_ctx = ext_chain.AddressIndex(i)
         pub_hex = addr_ctx.PublicKey().RawCompressed().ToHex()
-        addr_str = addr_ctx.PublicKey().ToAddress()    # uses appropriate encoding for the Bip class
+
+        # For custom HRP (like regtest 'bcrt'), manually encode the address
+        # ToAddress() only supports standard 'bc' and 'tb' HRPs
+        if hrp not in ['bc', 'tb']:
+            # Determine encoder based on BIP type
+            bip_name = type(bip_obj).__name__
+            if 'Bip84' in bip_name:
+                addr_str = P2WPKHAddrEncoder.EncodeKey(addr_ctx.PublicKey().RawCompressed().ToBytes(), hrp=hrp)
+            elif 'Bip86' in bip_name:
+                # For P2TR, encode with custom HRP using the CoinsConf params approach
+                # We'll create a custom address with the regtest HRP
+                try:
+                    # Get the Taproot internal key (x-only pubkey)
+                    from bip_utils.addr.segwit_addr import SegwitBech32Encoder
+                    witness_prog = addr_ctx.PublicKey().RawCompressed().ToBytes()[1:]  # x-only key
+                    addr_str = SegwitBech32Encoder.Encode(hrp, 1, witness_prog)  # witness version 1 for Taproot
+                except Exception:
+                    # Fallback to default if encoding fails
+                    addr_str = addr_ctx.PublicKey().ToAddress()
+            else:
+                # BIP44 and BIP49 don't use bech32, so just use default
+                addr_str = addr_ctx.PublicKey().ToAddress()
+        else:
+            # Use default encoding for standard networks
+            addr_str = addr_ctx.PublicKey().ToAddress()
+
         children.append((i, pub_hex, addr_str))
 
     return acct_xprv, acct_xpub, children
@@ -57,27 +85,42 @@ def main():
     ap.add_argument("--mnemonic", required=True, help="BIP39 mnemonic (wrap in quotes)")
     ap.add_argument("--passphrase", default="", help="Optional BIP39 passphrase")
     ap.add_argument("--count", type=int, default=20, help="Number of child addresses to derive (default 20)")
-    ap.add_argument("--testnet", action="store_true", help="Use testnet coins/addresses")
+    ap.add_argument("--network", choices=["bitcoin", "testnet", "regtest"], default="bitcoin",
+                    help="Network to use: bitcoin (mainnet), testnet, or regtest (default: bitcoin)")
+    ap.add_argument("--testnet", action="store_true", help="Use testnet coins/addresses (deprecated, use --network testnet)")
     args = ap.parse_args()
+
+    # Determine network (support deprecated --testnet flag)
+    if args.testnet:
+        network = "testnet"
+    else:
+        network = args.network
 
     # seed
     seed_bytes = Bip39SeedGenerator(args.mnemonic).Generate(args.passphrase)
 
-    # Choose coin enums depending on mainnet/testnet
-    if args.testnet:
-        # bip_utils enums for testnet: usually *_TESTNET variants exist; fall back to bitcoin testnet coin enums where defined
-        # We'll use the BTC testnet coin enums available in bip_utils
-        bip44_coin = Bip44Coins.BITCOIN_TESTNET  # bip_utils historically uses the same coin enum and outputs testnet addresses if network param used when encoding
+    # Choose coin enums and HRP depending on network
+    if network == "testnet":
+        bip44_coin = Bip44Coins.BITCOIN_TESTNET
         bip49_coin = Bip49Coins.BITCOIN_TESTNET
         bip84_coin = Bip84Coins.BITCOIN_TESTNET
         bip86_coin = Bip86Coins.BITCOIN_TESTNET
         hrp = "tb"
-    else:
+        coin_type = 1
+    elif network == "regtest":
+        bip44_coin = Bip44Coins.BITCOIN_REGTEST
+        bip49_coin = Bip49Coins.BITCOIN_REGTEST
+        bip84_coin = Bip84Coins.BITCOIN_REGTEST
+        bip86_coin = Bip86Coins.BITCOIN_REGTEST
+        hrp = "bcrt"
+        coin_type = 1
+    else:  # bitcoin (mainnet)
         bip44_coin = Bip44Coins.BITCOIN
         bip49_coin = Bip49Coins.BITCOIN
         bip84_coin = Bip84Coins.BITCOIN
         bip86_coin = Bip86Coins.BITCOIN
         hrp = "bc"
+        coin_type = 0
 
     # Build Bip objects from seed
     bip44_mst = Bip44.FromSeed(seed_bytes, bip44_coin)
@@ -96,8 +139,7 @@ def main():
         print("MASTER (no ToExtended available) — check bip_utils version")
 
     # Accounts to derive (account 0)
-    # coin_type is 0 for mainnet, 1 for testnet (BIP44 standard)
-    coin_type = 1 if args.testnet else 0
+    # coin_type is 0 for mainnet, 1 for testnet/regtest (BIP44 standard)
     accounts = {
         f"BIP44  m/44'/{coin_type}'/0' (P2PKH)": bip44_mst,
         f"BIP49  m/49'/{coin_type}'/0' (P2SH-P2WPKH)": bip49_mst,
